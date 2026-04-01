@@ -1,5 +1,5 @@
 [package]
-name = "mem_rl"
+name = "revansy"
 version = "0.1.0"
 edition = "2024"
 
@@ -21,7 +21,17 @@ reqwest = { version = "0.11", features = ["json"], optional = true }
 log = "0.4"
 env_logger = "0.10"
 async-trait = "0.1"
+rand = "0.8"
 
 [[example]]
 name = "value_aware_reranking"
 path = "examples/value_aware_reranking.rs"
+
+[[example]]
+name = "industrial_batch_tuning"
+path = "examples/industrial_batch_tuning.rs"
+required-features = ["qdrant", "ollama"]
+
+[[example]]
+name = "recsys_movie_discovery"
+path = "examples/recsys_movie_discovery.rs"

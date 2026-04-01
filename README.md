@@ -1,6 +1,17 @@
-# MemRL
+# Revansy (v0.1.0: Industrial-Grade Foundation)
 
-**MemRL** is a sophisticated, memory-based reinforcement learning crate for autonomous AI agents. Unlike traditional semantic search (RAG), MemRL agents mathematically sort memories by analyzing both context similarity *and* a temporally-learned utility factor.
+**Revansy** is a production-ready, memory-based reinforcement learning engine for autonomous AI agents and high-scale Recommendation Systems. 
+
+Built on the core principles of the **MemRL** research paper, Revansy extends the architecture into an industrial-grade library that mathematically sorts memories by analyzing both context similarity *and* a temporally-learned utility factor.
+
+### Industrial Features
+This is the baseline core engine. It includes:
+- **Phase A/B Reranking Engine**: Seamlessly integrates vector search and RL math using Z-score normalization for scale.
+- **Async Batch Learning**: High-throughput `learn_batch` API for processing multiple rewards in a single optimized gRPC round-trip.
+- **Per-Request Hyperparameter Tuning**: Dynamic `RetrievalOptions` for A/B testing, allowing per-user or per-request overrides of $\lambda$, $\epsilon$, and pool sizes.
+- **Epsilon-Greedy Discovery**: Configurable $\epsilon$ to solve the "Cold Start" problem in Recommendation Systems.
+- **`RewardSignal` Trait**: Support for complex multi-objective scoring (Latency, Cost, CTR, etc.).
+- **Qdrant & Ollama Connectors**: Optimized, battle-tested reference implementations.
 
 ## Prerequisites
 
@@ -23,63 +34,108 @@ docker-compose up -d
 
 ### 2. Configure Ollama Embedding Model
 
-MemRL uses the `nomic-embed-text` model via Ollama for text embeddings. Make sure your Ollama daemon is running, and pull the required model:
+Revansy uses the `nomic-embed-text` model via Ollama for text embeddings. Make sure your Ollama daemon is running, and pull the required model:
 
 ```bash
 ollama pull nomic-embed-text
 ```
 
-### 3. Run the Example Agent Simulation
+### 3. Run the Example Simulations
 
-To test the MemRL mathematical pipeline interactively, you can run the included Docker-backed simulation example:
+To test the Revansy mathematical and industrial pipeline, you can run the following examples:
 
+**Agent Simulation (Value-Aware Reranking):**
 ```bash
 cargo run --example value_aware_reranking --features "qdrant ollama"
 ```
 
-## Integrating MemRL in your projects
+**RecSys Discovery (Cold Start Solution):**
+```bash
+cargo run --example recsys_movie_discovery --features "qdrant ollama"
+```
 
-To use MemRL in your own real-time agents, add it to your dependencies. If you don't require external SDKs like `qdrant-client` or `reqwest`, disable the default features.
+**Industrial Batch & Tuning (A/B Testing Demo):**
+```bash
+cargo run --example industrial_batch_tuning --features "qdrant ollama"
+```
+
+## Integrating Revansy in your projects
+
+To use Revansy in your own real-time agents, add it to your dependencies.
 
 ```toml
 [dependencies]
-mem_rl = { version = "0.1", default-features = false }
+revansy = { version = "0.1", features = ["qdrant", "ollama"] }
 ```
 
 ### The Builder Pattern
 
-Construct a real-time agent memory system via the `MemRLAgentBuilder`:
+Construct a real-time agent memory system via the `RevansyAgentBuilder`:
 
 ```rust
-use mem_rl::MemRLAgentBuilder;
+use revansy::RevansyAgentBuilder;
 
-let agent = MemRLAgentBuilder::new(your_vector_store)
+let agent = RevansyAgentBuilder::new(your_vector_store)
     .learning_rate(0.3)
     .utility_balance(0.5)
     .recall_pool(50)
     .context_window(3)
+    .exploration_rate(0.1) // 10% chance to explore unknown items
     .build()?;
 ```
 
-## Background (Based on MemRL Paper)
+### Per-Request Tuning (A/B Testing)
 
-This implementation is based on the concepts formalized in the **MemRL** research paper. It enables autonomous AI agents to self-evolve by learning from episodic memory using Reinforcement Learning techniques. 
+You can override hyperparameters on a per-request basis using `RetrievalOptions`:
 
-The system relies on an **Intent-Experience-Utility** triplet:
-- **Intent ($z_i$)**: The context or query that triggered the experience.
-- **Experience ($e_i$)**: The solution trace or trajectory results.
-- **Utility ($Q_i$)**: A learned scalar value representing how helpful this memory was in the past.
+```rust
+use revansy::RetrievalOptions;
 
-It employs **Two-Phase Retrieval** to fetch relevant experiences:
-- **Phase A (Semantic Similarity)**: Retrieves candidate memories based strictly on embedding cosine distance.
-- **Phase B (Value-Aware Selection)**: Re-ranks candidates by computing a Z-score normalized composite score that balances semantic similarity and the historical utility ($Q_i$) of the memory.
+let options = RetrievalOptions::new()
+    .epsilon(0.8) // High exploration for this specific user
+    .lambda(0.2); // Prioritize semantic similarity over learned utility
 
-After an experience is utilized and a new reward is observed, the agent updates the utility profile via **Monte Carlo Learning** ($Q_{new} \leftarrow Q_{old} + \alpha(r - Q_{old})$) rather than discarding the memory.
+let results = agent.retrieve(&query_emb, options).await?;
+```
+
+### Batch Learning
+
+For high-throughput systems, use the batch learning API to update multiple memories efficiently:
+
+```rust
+// Group multiple items and their associated rewards
+let updates = vec![(&item1, reward1), (&item2, reward2)];
+
+// Dispatched in a single optimized gRPC call to Qdrant
+agent.learn_batch(updates).await?;
+```
+
+## Background: From MemRL to Revansy
+
+This implementation started with the formalisms of the **MemRL** research paper—enabling autonomous AI agents to self-evolve via episodic memory and Reinforcement Learning. However, this library has evolved into the **Revansy Foundation**, which extends the original theory into a production-grade, global-scale memory architecture.
+
+### The MemRL Foundation (Section 4.1)
+The core remains anchored to the **Intent-Experience-Utility** triplet:
+- **Intent ($z_i$)**: The context or query that triggered the response.
+- **Experience ($e_i$)**: The recorded artifact or solution trace.
+- **Utility ($Q_i$)**: A learned scalar representing historical empirical helpfulness.
+
+### The Revansy Evolution (Beyond the Paper)
+Revansy introduces industrial-scale features required for real-world Agents and Recommender Systems:
+
+1. **$\epsilon$-Greedy Discovery (Cold Start Solution)**: 
+   Periodic exploration allows solving the "Cold Start" problem by surfacing new items to gather fresh reward data.
+
+2. **The `RewardSignal` Trait (Multi-Objective RL)**: 
+   Decouples the reward logic, allowing developers to collapse complex metrics like **Latency**, **Cost**, **CTR**, and **Correctness** into the final Q-value update.
+
+3. **High-Throughput Batching**: 
+   Optimized storage layer for high-frequency feedback loops.
 
 ## Architecture Summary
 
-MemRL functions via a learning feedback loop:
+Revansy functions via a learning feedback loop:
 - Computes text embeddings for a given request via **Ollama**.
 - Performs a semantic similarity search in **Qdrant** to retrieve similar past intents.
-- Chooses to rely on retrieved experiences or executes a fallback simulation.
-- Records the operation's utility factor and adjusts its knowledge representation appropriately on successive queries.
+- Performs Phase B re-ranking based on learned utilities.
+- Records the operation's utility factor (Async Batch) and adjusts its knowledge representation appropriately on successive queries.

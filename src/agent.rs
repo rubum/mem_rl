@@ -1,165 +1,245 @@
-use crate::domain::{Embedding, MemoryItem, Reward};
-use crate::error::MemRLError;
+use crate::domain::{Embedding, MemoryItem, RewardSignal, RetrievalOptions};
+use crate::error::RevansyError;
 use crate::math::{compute_memrl_score, z_score_normalize};
 use crate::storage::VectorStore;
+use rand::Rng;
+use serde_json::json;
 
-/// The orchestrating reinforcement learning agent from the MemRL specification.
-/// 
-/// The agent maintains an active vector store and coordinates the retrieval-learning loop.
-pub struct MemRLAgent<S: VectorStore> {
-    /// The external dense vector database storing the Intent-Experience-Utility triplets.
+/// The orchestrating reinforcement learning agent from the Revansy specification.
+///
+/// The core follows the Intent-Experience-Utility paradigm. It manages a vector store
+/// and performs value-aware retrieval to surface high-utility episodic memories.
+pub struct RevansyAgent<S: VectorStore> {
     pub store: S,
-    /// $\alpha \in [0, 1]$: The Temporal-Difference (TD) learning rate. 
-    /// Controls how drastically new rewards override historic $Q$-values (Eq. 4).
+    /// $\alpha \in [0, 1]$: The Learning Rate. Controls how much new experience overrides old utility.
     pub alpha: f32,
-    /// $\lambda \in [0, 1]$: The Value-Aware Balance Factor. 
-    /// Controls the trade-off between Semantic Similarity vs. Historic Utility (Eq. 7).
+    /// $\lambda \in [0, 1]$: The Utility Balance.
+    /// Controls the trade-off between raw semantic similarity and learned $Q$-values.
     pub lambda: f32,
-    /// $k_1$: The Recall Pool Size. The number of candidate triplets retrieved via Phase A fast semantic search.
+    /// $k_1$: The Initial Recall Pool Size. Number of candidates retrieved from Phase A.
     pub k1: usize,
     /// $k_2$: The Final Context Window Size. The number of memories passed to the LLM context after Phase B re-ranking.
     pub k2: usize,
+    /// $\epsilon \in [0, 1]$: The Exploration Rate.
+    /// Chances of bypassing Phase B to surface unknown or low-utility items (Cold Start solution).
+    pub exploration_rate: f32,
 }
 
-pub struct MemRLAgentBuilder<S: VectorStore> {
+/// Fluent builder for constructing a `RevansyAgent`.
+pub struct RevansyAgentBuilder<S: VectorStore> {
     store: S,
     alpha: f32,
     lambda: f32,
     k1: usize,
     k2: usize,
+    exploration_rate: f32,
 }
 
-impl<S: VectorStore> MemRLAgentBuilder<S> {
+impl<S: VectorStore> RevansyAgentBuilder<S> {
+    /// Initializes a builder with the mandatory `VectorStore` and default values:
+    /// - $\alpha$ (Learning Rate) = 0.1
+    /// - $\lambda$ (Utility Balance) = 0.5
+    /// - $k_1$ (Recall Pool) = 5
+    /// - $k_2$ (Context Window) = 3
+    /// - $\epsilon$ (Exploration) = 0.0
     pub fn new(store: S) -> Self {
         Self {
             store,
-            alpha: 0.3,
+            alpha: 0.1,
             lambda: 0.5,
             k1: 5,
             k2: 3,
+            exploration_rate: 0.0,
         }
     }
 
+    /// Sets the Learning Rate ($\alpha$). Must be $\in [0, 1]$.
     pub fn learning_rate(mut self, alpha: f32) -> Self {
         self.alpha = alpha;
         self
     }
 
+    /// Sets the Utility Balance ($\lambda$). Must be $\in [0, 1]$.
     pub fn utility_balance(mut self, lambda: f32) -> Self {
         self.lambda = lambda;
         self
     }
 
+    /// Sets the raw semantic recall pool size ($k_1$).
     pub fn recall_pool(mut self, k1: usize) -> Self {
         self.k1 = k1;
         self
     }
 
+    /// Sets the final context window size ($k_2$). Must be $\le k_1$.
     pub fn context_window(mut self, k2: usize) -> Self {
         self.k2 = k2;
         self
     }
 
-    pub fn build(self) -> core::result::Result<MemRLAgent<S>, MemRLError> {
+    /// Sets the $\epsilon$-greedy exploration rate. Must be $\in [0, 1]$.
+    pub fn exploration_rate(mut self, epsilon: f32) -> Self {
+        self.exploration_rate = epsilon;
+        self
+    }
+
+    /// Validates and constructs the `RevansyAgent`.
+    pub fn build(self) -> core::result::Result<RevansyAgent<S>, RevansyError> {
         if self.alpha < 0.0 || self.alpha > 1.0 {
-            return Err(MemRLError::AgentConfigurationError("alpha must be between 0 and 1".to_string()));
+            return Err(RevansyError::AgentConfigurationError(
+                "alpha must be between 0 and 1".to_string(),
+            ));
         }
         if self.lambda < 0.0 || self.lambda > 1.0 {
-            return Err(MemRLError::AgentConfigurationError("lambda must be between 0 and 1".to_string()));
+            return Err(RevansyError::AgentConfigurationError(
+                "lambda must be between 0 and 1".to_string(),
+            ));
         }
         if self.k1 < self.k2 {
-            return Err(MemRLError::AgentConfigurationError("recall pool (k1) must be >= context window (k2)".to_string()));
+            return Err(RevansyError::AgentConfigurationError(
+                "recall pool (k1) must be >= context window (k2)".to_string(),
+            ));
         }
 
-        Ok(MemRLAgent {
+        if self.exploration_rate < 0.0 || self.exploration_rate > 1.0 {
+            return Err(RevansyError::AgentConfigurationError(
+                "exploration_rate must be between 0 and 1".to_string(),
+            ));
+        }
+
+        Ok(RevansyAgent {
             store: self.store,
             alpha: self.alpha,
             lambda: self.lambda,
             k1: self.k1,
             k2: self.k2,
+            exploration_rate: self.exploration_rate,
         })
     }
 }
 
-impl<S: VectorStore> MemRLAgent<S> {
-    /// Executes the full Memory Retrieval Pipeline combining RAG and RL components.
+impl<S: VectorStore> RevansyAgent<S> {
+    /// The Revansy architecture mandates a strict two-stage process (Section 4.2):
     ///
-    /// The MemRL architecture mandates a strict two-stage process (Section 4.2):
-    /// 1. **Phase A (Semantic Matching)**: Fetches the top-$k_1$ structurally similar intents.
-    /// 2. **Phase B (Value-Aware Sort)**: Normalizes both semantic scores and experiential utilities,
-    ///    then calculates a final selection score modulated by $\lambda$.
-    pub async fn retrieve(&self, query_embedding: &Embedding) -> core::result::Result<Vec<MemoryItem>, MemRLError> {
+    /// 1. **Phase A (Semantic Retrieval)**: Fetch $k_1$ items based on raw dense distance.
+    /// 2. **Phase B (Value-Aware Rerank)**: Normalize $Q$-values and Similarity, then apply Eq. 7.
+    /// 
+    /// Calls accept `RetrievalOptions` for industrial per-request tuning (A/B testing).
+    pub async fn retrieve(
+        &self,
+        query_embedding: &Embedding,
+        options: RetrievalOptions,
+    ) -> core::result::Result<Vec<MemoryItem>, RevansyError> {
+        // Resolve effective hyperparameters
+        let k1 = options.k1.unwrap_or(self.k1);
+        let k2 = options.k2.unwrap_or(self.k2);
+        let epsilon = options.epsilon.unwrap_or(self.exploration_rate);
+        let lambda = options.lambda.unwrap_or(self.lambda);
+
         // Phase A: Similarity-Based Recall
-        // Retrieves a candidate pool C(s) from the VectorStore.
-        let candidates = self.store.search(query_embedding, self.k1).await?;
+        let candidates = self.store.search(query_embedding, k1).await?;
 
         if candidates.is_empty() {
             return Ok(vec![]);
         }
 
-        // Extracts scores and utilities for normalization.
-        let sim_scores: Vec<f32> = candidates.iter().map(|(_, score)| *score).collect();
+        // --- Multi-Objective Exploration ($\epsilon$-greedy) ---
+        let mut rng = rand::thread_rng();
+        if epsilon > 0.0 && rng.r#gen::<f32>() < epsilon {
+            let random_idx = rng.r#gen_range(0..candidates.len());
+            return Ok(vec![candidates[random_idx].0.clone()]);
+        }
+
+        // Phase B: Value-Aware Reranking (Equation 7)
+        let scores: Vec<f32> = candidates.iter().map(|(_, s)| *s).collect();
         let utilities: Vec<f32> = candidates.iter().map(|(item, _)| item.utility).collect();
 
-        // Performs Z-score normalization as per Section 4.2.
-        let sim_hat = z_score_normalize(&sim_scores);
-        let q_hat = z_score_normalize(&utilities);
+        // Phase B: Value-Aware Rerank (Equation 7)
+        let normalized_scores = z_score_normalize(&scores);
+        let normalized_utilities = z_score_normalize(&utilities);
 
-        // Phase B: Value-Aware Selection (Equation 7)
-        // Combines normalized similarity and utility into a single ranking score.
-        let mut scored_items: Vec<(MemoryItem, f32)> = candidates
+        let mut ranked_indices: Vec<usize> = (0..candidates.len()).collect();
+        ranked_indices.sort_by(|&a, &b| {
+            let score_a = compute_memrl_score(
+                normalized_scores[a],
+                normalized_utilities[a],
+                lambda,
+            );
+            let score_b = compute_memrl_score(
+                normalized_scores[b],
+                normalized_utilities[b],
+                lambda,
+            );
+            score_b.partial_cmp(&score_a).unwrap()
+        });
+
+        let results = ranked_indices
             .into_iter()
-            .enumerate()
-            .map(|(i, (item, _))| {
-                let score = compute_memrl_score(sim_hat[i], q_hat[i], self.lambda);
-                (item, score)
-            })
+            .take(k2)
+            .map(|i| candidates[i].0.clone())
             .collect();
 
-        // Sort by final score descending.
-        scored_items.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-
-        // Returns top-k2 items.
-        Ok(scored_items
-            .into_iter()
-            .take(self.k2)
-            .map(|(item, _)| item)
-            .collect())
+        Ok(results)
     }
 
     /// Executes the Offline Utility Update mechanism (Section 4.3).
-    ///
-    /// Traditional memory structures discard unused components. MemRL treats every experience application 
-    /// as a Markov Decision step and updates the empirical helpfulness ($Q_i$) based on the observed reward ($r$).
-    ///
-    /// It applies the classic Temporal-Difference style update rule:
-    /// $$Q_{\text{new}} \leftarrow Q_{\text{old}} + \alpha (r - Q_{\text{old}})$$
-    pub async fn learn(&self, item: &MemoryItem, reward: Reward) -> core::result::Result<(), MemRLError> {
+    pub async fn learn<R: RewardSignal>(
+        &self,
+        item: &MemoryItem,
+        reward: R,
+    ) -> core::result::Result<(), RevansyError> {
         let q_old = item.utility;
-        let r = reward.0;
+        let r = reward.composite_score();
         let q_new = q_old + self.alpha * (r - q_old);
 
-        // Persist the updated utility back to the storage.
         self.store.update_utility(item.id, q_new).await?;
+
+        Ok(())
+    }
+
+    /// Executes high-throughput Batch Learning updates for industrial scalability.
+    ///
+    /// Calculates new $Q$-values locally for all items and dispatches a single
+    /// bulk update to the underlying vector store.
+    pub async fn learn_batch<R: RewardSignal>(
+        &self,
+        updates: Vec<(&MemoryItem, R)>,
+    ) -> core::result::Result<(), RevansyError> {
+        if updates.is_empty() {
+            return Ok(());
+        }
+
+        let mut bulk_updates = Vec::with_capacity(updates.len());
+
+        for (item, reward) in updates {
+            let q_old = item.utility;
+            let r = reward.composite_score();
+            let q_new = q_old + self.alpha * (r - q_old);
+            bulk_updates.push((item.id, q_new));
+        }
+
+        self.store.update_utilities_batch(bulk_updates).await?;
 
         Ok(())
     }
 
     /// Bootstraps new episodic records into the system (Section 4.3).
     ///
-    /// When the agent encounters a novel intent where the Memory Bank $M$ yields no 
-    /// acceptable trajectory (or fails its simulation fallback), it commits the newly discovered 
-    /// path ($e_i$) to the bank. 
-    /// The item initializes its $Q$-value at baseline ($0.0$) before temporal-difference learning begins.
+    /// This method is the primary ingestion point for new memories. It handles
+    /// embedding generation (provided externally) and sets the initial utility to 0.0.
+    ///
+    /// # Returns
+    /// The created `MemoryItem` with its assigned UUID.
     pub async fn store_experience(
         &self,
         intent: String,
         embedding: Embedding,
         experience: String,
-    ) -> core::result::Result<(), MemRLError> {
-        let item = MemoryItem::new(intent, embedding, experience);
+        metadata: Option<serde_json::Value>,
+    ) -> core::result::Result<MemoryItem, RevansyError> {
+        let item = MemoryItem::new(intent, embedding, experience, metadata.unwrap_or(json!({})));
         self.store.upsert(&item).await?;
-        Ok(())
+        Ok(item)
     }
 }
 
@@ -169,34 +249,60 @@ mod tests {
     use async_trait::async_trait;
 
     struct MockStore;
+
     #[async_trait]
     impl VectorStore for MockStore {
-        async fn upsert(&self, _: &MemoryItem) -> core::result::Result<(), MemRLError> { Ok(()) }
-        async fn search(&self, _: &Embedding, _: usize) -> core::result::Result<Vec<(MemoryItem, f32)>, MemRLError> { Ok(vec![]) }
-        async fn update_utility(&self, _: uuid::Uuid, _: f32) -> core::result::Result<(), MemRLError> { Ok(()) }
+        async fn upsert(&self, _: &MemoryItem) -> core::result::Result<(), RevansyError> {
+            Ok(())
+        }
+        async fn search(
+            &self,
+            _: &Embedding,
+            _: usize,
+        ) -> core::result::Result<Vec<(MemoryItem, f32)>, RevansyError> {
+            Ok(vec![])
+        }
+        async fn update_utility(
+            &self,
+            _: uuid::Uuid,
+            _: f32,
+        ) -> core::result::Result<(), RevansyError> {
+            Ok(())
+        }
+        async fn update_utilities_batch(&self, _: Vec<(uuid::Uuid, f32)>) -> core::result::Result<(), RevansyError> {
+            Ok(())
+        }
     }
 
     #[test]
     fn test_builder_validation() {
         let store = MockStore;
-        
-        // Invalid alpha
-        let agent = MemRLAgentBuilder::new(store).learning_rate(1.5).build();
+        let agent = RevansyAgentBuilder::new(store).learning_rate(1.5).build();
         assert!(agent.is_err());
-        
+
         let store2 = MockStore;
-        // Invalid lambda
-        let agent2 = MemRLAgentBuilder::new(store2).utility_balance(-0.5).build();
+        let agent2 = RevansyAgentBuilder::new(store2)
+            .utility_balance(-0.5)
+            .build();
         assert!(agent2.is_err());
 
         let store3 = MockStore;
-        // Invalid pool size ratio
-        let agent3 = MemRLAgentBuilder::new(store3).recall_pool(2).context_window(5).build();
+        let agent3 = RevansyAgentBuilder::new(store3)
+            .recall_pool(2)
+            .context_window(5)
+            .build();
         assert!(agent3.is_err());
-        
+
         let store4 = MockStore;
-        // Valid instance
-        let agent4 = MemRLAgentBuilder::new(store4).build();
-        assert!(agent4.is_ok());
+        let agent4 = RevansyAgentBuilder::new(store4)
+            .exploration_rate(1.1)
+            .build();
+        assert!(agent4.is_err());
+
+        let store5 = MockStore;
+        let agent5 = RevansyAgentBuilder::new(store5)
+            .exploration_rate(0.1)
+            .build();
+        assert!(agent5.is_ok());
     }
 }
