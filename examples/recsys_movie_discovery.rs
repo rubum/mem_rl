@@ -1,5 +1,8 @@
 use miette::Result;
-use revansy::{EmbeddingService, OllamaEmbedder, QdrantStore, RetrievalOptions, RevansyAgentBuilder, RewardSignal};
+use relevansy::{
+    EmbeddingService, OllamaEmbedder, QdrantStore, RelevansyAgentBuilder, RetrievalOptions,
+    RewardSignal,
+};
 use serde_json::json;
 
 /// A multi-objective reward signal representing user interaction.
@@ -24,13 +27,13 @@ impl RewardSignal for UserEngagementReward {
     }
 }
 
-/// This example demonstrates a movie recommendation engine using Revansy.
+/// This example demonstrates a movie recommendation engine using Relevansy.
 /// It solves the "Cold Start" problem by allowing 20% exploration probability.
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
 
-    println!("Initializing Revansy Movie Recommender...");
+    println!("Initializing Relevansy Movie Recommender...");
 
     let embedder = OllamaEmbedder::new("nomic-embed-text:latest".to_string());
     let collection_name = format!("recsys_demo_{}", uuid::Uuid::new_v4().as_simple());
@@ -38,7 +41,7 @@ async fn main() -> Result<()> {
 
     // We set epsilon (exploration_rate) to 0.2
     // This gives any "new" or "unheard of" movie a 20% chance to be discovered.
-    let agent = RevansyAgentBuilder::new(store)
+    let agent = RelevansyAgentBuilder::new(store)
         .learning_rate(0.4)
         .utility_balance(0.5)
         .recall_pool(10)
@@ -78,7 +81,7 @@ async fn main() -> Result<()> {
 
         // Metadata tagging for genre-specific filtering.
         let metadata = json!({ "genres": genre, "is_new": engagement == 0.0 });
-        
+
         // 4. Store and immediately learn for established movies
         let item = agent
             .store_experience(desc.to_string(), emb, desc.to_string(), Some(metadata))
@@ -105,14 +108,16 @@ async fn main() -> Result<()> {
     println!(
         "We have exploration enabled (20%). The brand new 'Dune: Part Two' is mathematically invisible (utility=0),"
     );
-    println!("but Revansy will eventually surface it to gather data.");
+    println!("but Relevansy will eventually surface it to gather data.");
 
     let query_emb = embedder.embed(query).await?;
 
     // Run the search multiple times to demonstrate the probabilistic discovery.
     for i in 1..=10 {
         println!("\n--- Interaction Loop {} ---", i);
-        let recommendations = agent.retrieve(&query_emb, RetrievalOptions::default()).await?;
+        let recommendations = agent
+            .retrieve(&query_emb, RetrievalOptions::default())
+            .await?;
 
         for (idx, movie) in recommendations.iter().enumerate() {
             let is_new = movie

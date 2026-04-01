@@ -1,5 +1,5 @@
 use crate::domain::{Embedding, MemoryItem};
-use crate::error::RevansyError;
+use crate::error::RelevansyError;
 use async_trait::async_trait;
 
 #[cfg(feature = "qdrant")]
@@ -21,7 +21,7 @@ use std::collections::HashMap;
 #[async_trait]
 pub trait VectorStore: Send + Sync {
     /// Inserts or updates a `MemoryItem` in the store.
-    async fn upsert(&self, item: &MemoryItem) -> Result<(), RevansyError>;
+    async fn upsert(&self, item: &MemoryItem) -> Result<(), RelevansyError>;
 
     /// Phase A: Retrieves the $k_1$ semantically closest memories.
     ///
@@ -31,14 +31,14 @@ pub trait VectorStore: Send + Sync {
         &self,
         query_embedding: &Embedding,
         top_k: usize,
-    ) -> Result<Vec<(MemoryItem, f32)>, RevansyError>;
+    ) -> Result<Vec<(MemoryItem, f32)>, RelevansyError>;
 
     /// Updates the learned $Q$-value for a single specific experience.
     async fn update_utility(
         &self,
         item_id: uuid::Uuid,
         new_utility: f32,
-    ) -> Result<(), RevansyError>;
+    ) -> Result<(), RelevansyError>;
 
     /// High-throughput Batch Utility update. 
     ///
@@ -47,7 +47,7 @@ pub trait VectorStore: Send + Sync {
     async fn update_utilities_batch(
         &self,
         updates: Vec<(uuid::Uuid, f32)>,
-    ) -> Result<(), RevansyError>;
+    ) -> Result<(), RelevansyError>;
 }
 
 /// A production-grade implementation of `VectorStore` using the Qdrant vector database.
@@ -72,16 +72,16 @@ impl QdrantStore {
         url: &str,
         collection_name: String,
         vector_size: u64,
-    ) -> Result<Self, RevansyError> {
+    ) -> Result<Self, RelevansyError> {
         let client = Qdrant::from_url(url)
             .build()
-            .map_err(RevansyError::vector_store)?;
+            .map_err(RelevansyError::vector_store)?;
 
         // Ensure collection exists
         if !client
             .collection_exists(&collection_name)
             .await
-            .map_err(RevansyError::vector_store)?
+            .map_err(RelevansyError::vector_store)?
         {
             client
                 .create_collection(
@@ -89,7 +89,7 @@ impl QdrantStore {
                         .vectors_config(VectorParamsBuilder::new(vector_size, Distance::Cosine)),
                 )
                 .await
-                .map_err(RevansyError::vector_store)?;
+                .map_err(RelevansyError::vector_store)?;
         }
 
         Ok(Self {
@@ -102,7 +102,7 @@ impl QdrantStore {
 #[cfg(feature = "qdrant")]
 #[async_trait]
 impl VectorStore for QdrantStore {
-    async fn upsert(&self, item: &MemoryItem) -> Result<(), RevansyError> {
+    async fn upsert(&self, item: &MemoryItem) -> Result<(), RelevansyError> {
         let payload: Payload = json!({
             "intent": item.intent,
             "experience": item.experience,
@@ -111,7 +111,7 @@ impl VectorStore for QdrantStore {
             "metadata": item.metadata,
         })
         .try_into()
-        .map_err(|e| RevansyError::vector_store(e))?;
+        .map_err(|e| RelevansyError::vector_store(e))?;
 
         let points = vec![PointStruct::new(
             item.id.to_string(),
@@ -122,7 +122,7 @@ impl VectorStore for QdrantStore {
         self.client
             .upsert_points(UpsertPointsBuilder::new(&self.collection_name, points).wait(true))
             .await
-            .map_err(RevansyError::vector_store)?;
+            .map_err(RelevansyError::vector_store)?;
 
         Ok(())
     }
@@ -131,7 +131,7 @@ impl VectorStore for QdrantStore {
         &self,
         query_embedding: &Embedding,
         top_k: usize,
-    ) -> Result<Vec<(MemoryItem, f32)>, RevansyError> {
+    ) -> Result<Vec<(MemoryItem, f32)>, RelevansyError> {
         let query_request = QueryPointsBuilder::new(&self.collection_name)
             .query(query_embedding.0.clone())
             .limit(top_k as u64)
@@ -141,7 +141,7 @@ impl VectorStore for QdrantStore {
             .client
             .query(query_request)
             .await
-            .map_err(RevansyError::vector_store)?;
+            .map_err(RelevansyError::vector_store)?;
 
         let matches = search_result
             .result
@@ -185,7 +185,7 @@ impl VectorStore for QdrantStore {
         &self,
         item_id: uuid::Uuid,
         new_utility: f32,
-    ) -> Result<(), RevansyError> {
+    ) -> Result<(), RelevansyError> {
         let mut payload = Payload::new();
         // Explicitly ensuring we use a double for Qdrant compatibility
         payload.insert("utility", new_utility as f64);
@@ -196,7 +196,7 @@ impl VectorStore for QdrantStore {
                     .points_selector(vec![PointId::from(item_id.to_string())]),
             )
             .await
-            .map_err(RevansyError::vector_store)?;
+            .map_err(RelevansyError::vector_store)?;
 
         Ok(())
     }
@@ -204,7 +204,7 @@ impl VectorStore for QdrantStore {
     async fn update_utilities_batch(
         &self,
         updates: Vec<(uuid::Uuid, f32)>,
-    ) -> Result<(), RevansyError> {
+    ) -> Result<(), RelevansyError> {
         if updates.is_empty() {
             return Ok(());
         }
@@ -238,7 +238,7 @@ impl VectorStore for QdrantStore {
                 UpdateBatchPointsBuilder::new(&self.collection_name, operations).wait(true),
             )
             .await
-            .map_err(RevansyError::vector_store)?;
+            .map_err(RelevansyError::vector_store)?;
 
         Ok(())
     }

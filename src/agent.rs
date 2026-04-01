@@ -1,15 +1,15 @@
-use crate::domain::{Embedding, MemoryItem, RewardSignal, RetrievalOptions};
-use crate::error::RevansyError;
+use crate::domain::{Embedding, MemoryItem, RetrievalOptions, RewardSignal};
+use crate::error::RelevansyError;
 use crate::math::{compute_memrl_score, z_score_normalize};
 use crate::storage::VectorStore;
 use rand::Rng;
 use serde_json::json;
 
-/// The orchestrating reinforcement learning agent from the Revansy specification.
+/// The orchestrating reinforcement learning agent from the Relevansy specification.
 ///
 /// The core follows the Intent-Experience-Utility paradigm. It manages a vector store
 /// and performs value-aware retrieval to surface high-utility episodic memories.
-pub struct RevansyAgent<S: VectorStore> {
+pub struct RelevansyAgent<S: VectorStore> {
     pub store: S,
     /// $\alpha \in [0, 1]$: The Learning Rate. Controls how much new experience overrides old utility.
     pub alpha: f32,
@@ -25,8 +25,8 @@ pub struct RevansyAgent<S: VectorStore> {
     pub exploration_rate: f32,
 }
 
-/// Fluent builder for constructing a `RevansyAgent`.
-pub struct RevansyAgentBuilder<S: VectorStore> {
+/// Fluent builder for constructing a `RelevansyAgent`.
+pub struct RelevansyAgentBuilder<S: VectorStore> {
     store: S,
     alpha: f32,
     lambda: f32,
@@ -35,7 +35,7 @@ pub struct RevansyAgentBuilder<S: VectorStore> {
     exploration_rate: f32,
 }
 
-impl<S: VectorStore> RevansyAgentBuilder<S> {
+impl<S: VectorStore> RelevansyAgentBuilder<S> {
     /// Initializes a builder with the mandatory `VectorStore` and default values:
     /// - $\alpha$ (Learning Rate) = 0.1
     /// - $\lambda$ (Utility Balance) = 0.5
@@ -83,31 +83,31 @@ impl<S: VectorStore> RevansyAgentBuilder<S> {
         self
     }
 
-    /// Validates and constructs the `RevansyAgent`.
-    pub fn build(self) -> core::result::Result<RevansyAgent<S>, RevansyError> {
+    /// Validates and constructs the `RelevansyAgent`.
+    pub fn build(self) -> core::result::Result<RelevansyAgent<S>, RelevansyError> {
         if self.alpha < 0.0 || self.alpha > 1.0 {
-            return Err(RevansyError::AgentConfigurationError(
+            return Err(RelevansyError::AgentConfigurationError(
                 "alpha must be between 0 and 1".to_string(),
             ));
         }
         if self.lambda < 0.0 || self.lambda > 1.0 {
-            return Err(RevansyError::AgentConfigurationError(
+            return Err(RelevansyError::AgentConfigurationError(
                 "lambda must be between 0 and 1".to_string(),
             ));
         }
         if self.k1 < self.k2 {
-            return Err(RevansyError::AgentConfigurationError(
+            return Err(RelevansyError::AgentConfigurationError(
                 "recall pool (k1) must be >= context window (k2)".to_string(),
             ));
         }
 
         if self.exploration_rate < 0.0 || self.exploration_rate > 1.0 {
-            return Err(RevansyError::AgentConfigurationError(
+            return Err(RelevansyError::AgentConfigurationError(
                 "exploration_rate must be between 0 and 1".to_string(),
             ));
         }
 
-        Ok(RevansyAgent {
+        Ok(RelevansyAgent {
             store: self.store,
             alpha: self.alpha,
             lambda: self.lambda,
@@ -118,18 +118,18 @@ impl<S: VectorStore> RevansyAgentBuilder<S> {
     }
 }
 
-impl<S: VectorStore> RevansyAgent<S> {
-    /// The Revansy architecture mandates a strict two-stage process (Section 4.2):
+impl<S: VectorStore> RelevansyAgent<S> {
+    /// The Relevansy architecture mandates a strict two-stage process (Section 4.2):
     ///
     /// 1. **Phase A (Semantic Retrieval)**: Fetch $k_1$ items based on raw dense distance.
     /// 2. **Phase B (Value-Aware Rerank)**: Normalize $Q$-values and Similarity, then apply Eq. 7.
-    /// 
+    ///
     /// Calls accept `RetrievalOptions` for industrial per-request tuning (A/B testing).
     pub async fn retrieve(
         &self,
         query_embedding: &Embedding,
         options: RetrievalOptions,
-    ) -> core::result::Result<Vec<MemoryItem>, RevansyError> {
+    ) -> core::result::Result<Vec<MemoryItem>, RelevansyError> {
         // Resolve effective hyperparameters
         let k1 = options.k1.unwrap_or(self.k1);
         let k2 = options.k2.unwrap_or(self.k2);
@@ -160,16 +160,10 @@ impl<S: VectorStore> RevansyAgent<S> {
 
         let mut ranked_indices: Vec<usize> = (0..candidates.len()).collect();
         ranked_indices.sort_by(|&a, &b| {
-            let score_a = compute_memrl_score(
-                normalized_scores[a],
-                normalized_utilities[a],
-                lambda,
-            );
-            let score_b = compute_memrl_score(
-                normalized_scores[b],
-                normalized_utilities[b],
-                lambda,
-            );
+            let score_a =
+                compute_memrl_score(normalized_scores[a], normalized_utilities[a], lambda);
+            let score_b =
+                compute_memrl_score(normalized_scores[b], normalized_utilities[b], lambda);
             score_b.partial_cmp(&score_a).unwrap()
         });
 
@@ -187,7 +181,7 @@ impl<S: VectorStore> RevansyAgent<S> {
         &self,
         item: &MemoryItem,
         reward: R,
-    ) -> core::result::Result<(), RevansyError> {
+    ) -> core::result::Result<(), RelevansyError> {
         let q_old = item.utility;
         let r = reward.composite_score();
         let q_new = q_old + self.alpha * (r - q_old);
@@ -204,7 +198,7 @@ impl<S: VectorStore> RevansyAgent<S> {
     pub async fn learn_batch<R: RewardSignal>(
         &self,
         updates: Vec<(&MemoryItem, R)>,
-    ) -> core::result::Result<(), RevansyError> {
+    ) -> core::result::Result<(), RelevansyError> {
         if updates.is_empty() {
             return Ok(());
         }
@@ -236,7 +230,7 @@ impl<S: VectorStore> RevansyAgent<S> {
         embedding: Embedding,
         experience: String,
         metadata: Option<serde_json::Value>,
-    ) -> core::result::Result<MemoryItem, RevansyError> {
+    ) -> core::result::Result<MemoryItem, RelevansyError> {
         let item = MemoryItem::new(intent, embedding, experience, metadata.unwrap_or(json!({})));
         self.store.upsert(&item).await?;
         Ok(item)
@@ -252,24 +246,27 @@ mod tests {
 
     #[async_trait]
     impl VectorStore for MockStore {
-        async fn upsert(&self, _: &MemoryItem) -> core::result::Result<(), RevansyError> {
+        async fn upsert(&self, _: &MemoryItem) -> core::result::Result<(), RelevansyError> {
             Ok(())
         }
         async fn search(
             &self,
             _: &Embedding,
             _: usize,
-        ) -> core::result::Result<Vec<(MemoryItem, f32)>, RevansyError> {
+        ) -> core::result::Result<Vec<(MemoryItem, f32)>, RelevansyError> {
             Ok(vec![])
         }
         async fn update_utility(
             &self,
             _: uuid::Uuid,
             _: f32,
-        ) -> core::result::Result<(), RevansyError> {
+        ) -> core::result::Result<(), RelevansyError> {
             Ok(())
         }
-        async fn update_utilities_batch(&self, _: Vec<(uuid::Uuid, f32)>) -> core::result::Result<(), RevansyError> {
+        async fn update_utilities_batch(
+            &self,
+            _: Vec<(uuid::Uuid, f32)>,
+        ) -> core::result::Result<(), RelevansyError> {
             Ok(())
         }
     }
@@ -277,30 +274,30 @@ mod tests {
     #[test]
     fn test_builder_validation() {
         let store = MockStore;
-        let agent = RevansyAgentBuilder::new(store).learning_rate(1.5).build();
+        let agent = RelevansyAgentBuilder::new(store).learning_rate(1.5).build();
         assert!(agent.is_err());
 
         let store2 = MockStore;
-        let agent2 = RevansyAgentBuilder::new(store2)
+        let agent2 = RelevansyAgentBuilder::new(store2)
             .utility_balance(-0.5)
             .build();
         assert!(agent2.is_err());
 
         let store3 = MockStore;
-        let agent3 = RevansyAgentBuilder::new(store3)
+        let agent3 = RelevansyAgentBuilder::new(store3)
             .recall_pool(2)
             .context_window(5)
             .build();
         assert!(agent3.is_err());
 
         let store4 = MockStore;
-        let agent4 = RevansyAgentBuilder::new(store4)
+        let agent4 = RelevansyAgentBuilder::new(store4)
             .exploration_rate(1.1)
             .build();
         assert!(agent4.is_err());
 
         let store5 = MockStore;
-        let agent5 = RevansyAgentBuilder::new(store5)
+        let agent5 = RelevansyAgentBuilder::new(store5)
             .exploration_rate(0.1)
             .build();
         assert!(agent5.is_ok());

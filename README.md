@@ -1,8 +1,8 @@
-# Revansy (v0.1.0: Industrial-Grade Foundation)
+# Relevansy (v0.1.0: Industrial-Grade Foundation)
 
-**Revansy** is a production-ready, memory-based reinforcement learning engine for autonomous AI agents and high-scale Recommendation Systems. 
+**Relevansy** is a production-ready, memory-based reinforcement learning engine for autonomous AI agents and high-scale Recommendation Systems. 
 
-Built on the core principles of the **MemRL** research paper, Revansy extends the architecture into an industrial-grade library that mathematically sorts memories by analyzing both context similarity *and* a temporally-learned utility factor.
+Built on the core principles of the **MemRL** research paper, Relevansy extends the architecture into an industrial-grade library that mathematically sorts memories by analyzing both context similarity *and* a temporally-learned utility factor.
 
 ### Industrial Features
 This is the baseline core engine. It includes:
@@ -34,7 +34,7 @@ docker-compose up -d
 
 ### 2. Configure Ollama Embedding Model
 
-Revansy uses the `nomic-embed-text` model via Ollama for text embeddings. Make sure your Ollama daemon is running, and pull the required model:
+Relevansy uses the `nomic-embed-text` model via Ollama for text embeddings. Make sure your Ollama daemon is running, and pull the required model:
 
 ```bash
 ollama pull nomic-embed-text
@@ -42,7 +42,7 @@ ollama pull nomic-embed-text
 
 ### 3. Run the Example Simulations
 
-To test the Revansy mathematical and industrial pipeline, you can run the following examples:
+To test the Relevansy mathematical and industrial pipeline, you can run the following examples:
 
 **Agent Simulation (Value-Aware Reranking):**
 ```bash
@@ -59,23 +59,23 @@ cargo run --example recsys_movie_discovery --features "qdrant ollama"
 cargo run --example industrial_batch_tuning --features "qdrant ollama"
 ```
 
-## Integrating Revansy in your projects
+## Integrating Relevansy in your projects
 
-To use Revansy in your own real-time agents, add it to your dependencies.
+To use Relevansy in your own real-time agents, add it to your dependencies.
 
 ```toml
 [dependencies]
-revansy = { version = "0.1", features = ["qdrant", "ollama"] }
+relevansy = { version = "0.1", features = ["qdrant", "ollama"] }
 ```
 
 ### The Builder Pattern
 
-Construct a real-time agent memory system via the `RevansyAgentBuilder`:
+Construct a real-time agent memory system via the `RelevansyAgentBuilder`:
 
 ```rust
-use revansy::RevansyAgentBuilder;
+use relevansy::RelevansyAgentBuilder;
 
-let agent = RevansyAgentBuilder::new(your_vector_store)
+let agent = RelevansyAgentBuilder::new(your_vector_store)
     .learning_rate(0.3)
     .utility_balance(0.5)
     .recall_pool(50)
@@ -89,7 +89,7 @@ let agent = RevansyAgentBuilder::new(your_vector_store)
 You can override hyperparameters on a per-request basis using `RetrievalOptions`:
 
 ```rust
-use revansy::RetrievalOptions;
+use relevansy::RetrievalOptions;
 
 let options = RetrievalOptions::new()
     .epsilon(0.8) // High exploration for this specific user
@@ -110,9 +110,9 @@ let updates = vec![(&item1, reward1), (&item2, reward2)];
 agent.learn_batch(updates).await?;
 ```
 
-## Background: From MemRL to Revansy
+## Background: From MemRL to Relevansy
 
-This implementation started with the formalisms of the **MemRL** research paper—enabling autonomous AI agents to self-evolve via episodic memory and Reinforcement Learning. However, this library has evolved into the **Revansy Foundation**, which extends the original theory into a production-grade, global-scale memory architecture.
+This implementation started with the formalisms of the **MemRL** research paper—enabling autonomous AI agents to self-evolve via episodic memory and Reinforcement Learning. However, this library has evolved into the **Relevansy Foundation**, which extends the original theory into a production-grade, global-scale memory architecture.
 
 ### The MemRL Foundation (Section 4.1)
 The core remains anchored to the **Intent-Experience-Utility** triplet:
@@ -120,8 +120,8 @@ The core remains anchored to the **Intent-Experience-Utility** triplet:
 - **Experience ($e_i$)**: The recorded artifact or solution trace.
 - **Utility ($Q_i$)**: A learned scalar representing historical empirical helpfulness.
 
-### The Revansy Evolution (Beyond the Paper)
-Revansy introduces industrial-scale features required for real-world Agents and Recommender Systems:
+### The Relevansy Evolution (Beyond the Paper)
+Relevansy introduces industrial-scale features required for real-world Agents and Recommender Systems:
 
 1. **$\epsilon$-Greedy Discovery (Cold Start Solution)**: 
    Periodic exploration allows solving the "Cold Start" problem by surfacing new items to gather fresh reward data.
@@ -134,7 +134,7 @@ Revansy introduces industrial-scale features required for real-world Agents and 
 
 ## Architecture Summary
 
-Revansy functions via a learning feedback loop:
+Relevansy functions via a learning feedback loop:
 - Computes text embeddings for a given request via **Ollama**.
 - Performs a semantic similarity search in **Qdrant** to retrieve similar past intents.
 - Performs Phase B re-ranking based on learned utilities.

@@ -6,12 +6,12 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Embedding(pub Vec<f32>);
 
-/// The fundamental unit of knowledge in the Revansy architecture, referred to as an "Episodic Memory".
+/// The fundamental unit of knowledge in the Relevansy architecture, referred to as an "Episodic Memory".
 ///
 /// According to Section 4.1 of the MemRL research paper, the memory bank $M$ is formalized as a set of triplets:
 /// $$M = \{ (z_i, e_i, Q_i) \}_{i=1}^N$$
 ///
-/// Unlike traditional RAG which maps raw text to chunks, Revansy structuralizes memory into:
+/// Unlike traditional RAG which maps raw text to chunks, Relevansy structuralizes memory into:
 /// - **Intent**: The context or conditions under which a solution was sought.
 /// - **Experience**: The successful trajectory or response that fulfilled the intent.
 /// - **Utility**: A temporal-difference learned value indicating historical reliability.
@@ -48,9 +48,9 @@ impl RewardSignal for Reward {
 }
 
 /// Dynamic overrides for per-request hyperparameter tuning.
-/// 
+///
 /// Allows industrial-scale A/B testing and context-aware reranking
-/// without needing to reconstruct the core RevansyAgent.
+/// without needing to reconstruct the core RelevansyAgent.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RetrievalOptions {
     /// Overrides the agent's default `lambda` (Balance between similarity and utility).

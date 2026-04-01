@@ -5,10 +5,10 @@ pub mod error;
 pub mod math;
 pub mod storage;
 
-pub use agent::{RevansyAgent, RevansyAgentBuilder};
+pub use agent::{RelevansyAgent, RelevansyAgentBuilder};
 pub use domain::{MemoryItem, Reward, RewardSignal, RetrievalOptions};
 pub use embedding::EmbeddingService;
-pub use error::RevansyError;
+pub use error::RelevansyError;
 pub use storage::VectorStore;
 
 #[cfg(feature = "ollama")]

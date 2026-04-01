@@ -1,5 +1,5 @@
 use crate::domain::Embedding;
-use crate::error::RevansyError;
+use crate::error::RelevansyError;
 use async_trait::async_trait;
 #[cfg(feature = "ollama")]
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 #[async_trait]
 pub trait EmbeddingService: Send + Sync {
     /// Generates a dense vector for the given text.
-    async fn embed(&self, text: &str) -> Result<Embedding, RevansyError>;
+    async fn embed(&self, text: &str) -> Result<Embedding, RelevansyError>;
 }
 
 #[cfg(feature = "ollama")]
@@ -55,7 +55,7 @@ impl OllamaEmbedder {
 #[cfg(feature = "ollama")]
 #[async_trait]
 impl EmbeddingService for OllamaEmbedder {
-    async fn embed(&self, text: &str) -> Result<Embedding, RevansyError> {
+    async fn embed(&self, text: &str) -> Result<Embedding, RelevansyError> {
         let client = reqwest::Client::new();
         let resp = client
             .post(format!("{}/api/embeddings", self.base_url))
@@ -65,11 +65,11 @@ impl EmbeddingService for OllamaEmbedder {
             })
             .send()
             .await
-            .map_err(RevansyError::embed)?
+            .map_err(RelevansyError::embed)?
             .error_for_status()
-            .map_err(|e| RevansyError::EmbeddingError(format!("Ollama API Error: {}", e)))?;
+            .map_err(|e| RelevansyError::EmbeddingError(format!("Ollama API Error: {}", e)))?;
 
-        let body: OllamaEmbedResponse = resp.json().await.map_err(RevansyError::embed)?;
+        let body: OllamaEmbedResponse = resp.json().await.map_err(RelevansyError::embed)?;
         Ok(Embedding(body.embedding))
     }
 }

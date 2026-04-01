@@ -1,8 +1,8 @@
 use miette::Result;
-use revansy::{EmbeddingService, OllamaEmbedder, QdrantStore, RetrievalOptions, RevansyAgentBuilder, RewardSignal};
+use relevansy::{EmbeddingService, OllamaEmbedder, QdrantStore, RetrievalOptions, RelevansyAgentBuilder, RewardSignal};
 use serde_json::json;
 
-/// A custom multi-objective reward signal for Revansy.
+/// A custom multi-objective reward signal for Relevansy.
 /// This simulates a reward based on correctness, latency, and cost.
 struct MultiObjectiveReward {
     correctness: f32,     // 0.0 to 1.0
@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
     // Initialize standard logging for debugging embedded dependency output
     env_logger::init();
 
-    println!("Initializing Revansy Agent Environment...");
+    println!("Initializing Relevansy Agent Environment...");
 
     // --- Core Engine Setup ---
 
@@ -37,10 +37,10 @@ async fn main() -> Result<()> {
     // To ensure the simulation always starts clean and never collides with
     // a real production memory bank, we generate a random UUID for the collection.
     // Note: The vector dimension (768) must precisely match what nomic outputs.
-    let collection_name = format!("revansy_demo_{}", uuid::Uuid::new_v4().as_simple());
+    let collection_name = format!("relevansy_demo_{}", uuid::Uuid::new_v4().as_simple());
     let store = QdrantStore::new("http://localhost:6334", collection_name.clone(), 768).await?;
 
-    // 3. Initialize Revansy Agent
+    // 3. Initialize Relevansy Agent
     // We use the builder pattern to strictly enforce the algorithmic hyperparameters.
     // - alpha = 0.5 (fast learning): New rewards will aggressively overwrite historical utility.
     // - lambda = 0.6: In the final Equation 7 calculation, the historical utility will
@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
     // - recall_pool = 10: Phase A will pull up to 10 close semantic matches via fast indexing.
     // - context_window = 3: Phase B will pare this down to the top 3 items to feed to an LLM.
     // - exploration_rate = 0.1 (10% chance to surface unknown/unseen items)
-    let agent = RevansyAgentBuilder::new(store)
+    let agent = RelevansyAgentBuilder::new(store)
         .learning_rate(0.5)
         .utility_balance(0.6)
         .recall_pool(10)
@@ -57,7 +57,7 @@ async fn main() -> Result<()> {
         .build()?;
 
     println!(
-        "Revansy Agent initialized successfully on temporary collection '{}'!",
+        "Relevansy Agent initialized successfully on temporary collection '{}'!",
         collection_name
     );
     println!("--------------------------------------------------");

@@ -1,7 +1,7 @@
 use miette::Result;
-use revansy::{
+use relevansy::{
     EmbeddingService, MemoryItem, OllamaEmbedder, QdrantStore, RetrievalOptions,
-    RevansyAgentBuilder, RewardSignal,
+    RelevansyAgentBuilder, RewardSignal,
 };
 
 /// A simple reward for our industrial simulation.
@@ -23,8 +23,8 @@ async fn main() -> Result<()> {
     let collection_name = format!("industrial_demo_{}", uuid::Uuid::new_v4().as_simple());
     let store = QdrantStore::new("http://localhost:6334", collection_name.clone(), 768).await?;
 
-    // 2. Initialize the Revansy Agent with "Enterprise Defaults"
-    let agent = RevansyAgentBuilder::new(store)
+    // 2. Initialize the Relevansy Agent with "Enterprise Defaults"
+    let agent = RelevansyAgentBuilder::new(store)
         .learning_rate(0.3)
         .utility_balance(0.5)
         .recall_pool(100)
@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
         .build()?;
 
     println!(
-        "🚀 Starting Industrial Revansy Simulation (Collection: {})",
+        "🚀 Starting Industrial Relevansy Simulation (Collection: {})",
         collection_name
     );
     println!("--------------------------------------------------");
