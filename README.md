@@ -63,18 +63,22 @@ let agent = MemRLAgentBuilder::new(your_vector_store)
 
 ## Background (Based on MemRL Paper)
 
-This implementation is based on the concepts formalized in the **MemRL** research paper. It enables autonomous AI agents to self-evolve by learning from episodic memory using Reinforcement Learning techniques. 
+This implementation is based on the concepts formalized in the research paper: [**MemRL: Self-Evolving Agents via Runtime Reinforcement Learning on Episodic Memory**](https://arxiv.org/abs/2601.03192). It enables autonomous AI agents to self-evolve by learning from episodic memory using Reinforcement Learning techniques. 
 
 The system relies on an **Intent-Experience-Utility** triplet:
-- **Intent ($z_i$)**: The context or query that triggered the experience.
-- **Experience ($e_i$)**: The solution trace or trajectory results.
-- **Utility ($Q_i$)**: A learned scalar value representing how helpful this memory was in the past.
+- **Intent** ($z_i$): The context or query that triggered the experience.
+- **Experience** ($e_i$): The solution trace or trajectory results.
+- **Utility** ($Q_{i}$): A learned scalar value representing how helpful this memory was in the past.
 
 It employs **Two-Phase Retrieval** to fetch relevant experiences:
 - **Phase A (Semantic Similarity)**: Retrieves candidate memories based strictly on embedding cosine distance.
-- **Phase B (Value-Aware Selection)**: Re-ranks candidates by computing a Z-score normalized composite score that balances semantic similarity and the historical utility ($Q_i$) of the memory.
+- **Phase B (Value-Aware Selection)**: Re-ranks candidates by computing a Z-score normalized composite score that balances semantic similarity and the historical utility ($Q_{i}$) of the memory.
 
-After an experience is utilized and a new reward is observed, the agent updates the utility profile via **Monte Carlo Learning** ($Q_{new} \leftarrow Q_{old} + \alpha(r - Q_{old})$) rather than discarding the memory.
+After an experience is utilized and a new reward is observed, the agent updates the utility profile via **Monte Carlo Learning**:
+
+$$Q_{new} \leftarrow Q_{old} + \alpha(r - Q_{old})$$
+
+rather than discarding the memory.
 
 ## Architecture Summary
 
@@ -83,3 +87,8 @@ MemRL functions via a learning feedback loop:
 - Performs a semantic similarity search in **Qdrant** to retrieve similar past intents.
 - Chooses to rely on retrieved experiences or executes a fallback simulation.
 - Records the operation's utility factor and adjusts its knowledge representation appropriately on successive queries.
+
+## References
+
+- [2601.03192] **MemRL: Self-Evolving Agents via Runtime Reinforcement Learning on Episodic Memory**. *arXiv preprint arXiv:2601.03192 (2026).* [https://arxiv.org/abs/2601.03192](https://arxiv.org/abs/2601.03192)
+
